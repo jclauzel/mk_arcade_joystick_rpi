@@ -133,6 +133,17 @@ static struct gpio_config gpio_cfg __initdata;
 module_param_array_named(gpio, gpio_cfg.mk_arcade_gpio_maps_custom, int, &(gpio_cfg.nargs), 0);
 MODULE_PARM_DESC(gpio, "Numbers of custom GPIO for Arcade Joystick");
 
+
+enum joystick_mode_type {
+    MK_ANALOG = 0,
+    MK_DIGITAL
+};
+
+static int joystick_mode = MK_ANALOG;
+
+module_param(joystick_mode, int, 0);
+MODULE_PARM_DESC(joystick_mode, "Joystick mode: 0 = analog, 1 = digital (d-pad)");
+
 enum mk_type {
     MK_NONE = 0,
     MK_ARCADE_GPIO,
@@ -198,6 +209,10 @@ static const int mk_arcade_gpio_maps_tft[] = { 21, 13,    26,    19,    5,    6,
 
 static const short mk_arcade_gpio_btn[] = {
 	BTN_START, BTN_SELECT, BTN_A, BTN_B, BTN_TR, BTN_Y, BTN_X, BTN_TL, BTN_C, BTN_TR2, BTN_Z, BTN_TL2
+};
+
+static const short mk_arcade_gpio_btn_dpad[] = {
+    BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT
 };
 
 static const char *mk_names[] = {
@@ -329,8 +344,16 @@ static void mk_gpio_read_packet(struct mk_pad * pad, unsigned char *data) {
 static void mk_input_report(struct mk_pad * pad, unsigned char * data) {
     struct input_dev * dev = pad->dev;
     int j;
-    input_report_abs(dev, ABS_Y, !data[0]-!data[1]);
-    input_report_abs(dev, ABS_X, !data[2]-!data[3]);
+
+    if (joystick_mode == MK_ANALOG) {
+        input_report_abs(dev, ABS_Y, !data[0]-!data[1]);
+        input_report_abs(dev, ABS_X, !data[2]-!data[3]);
+    } else {
+        for (j = 0; j < 4; j++) {
+            input_report_key(dev, mk_arcade_gpio_btn_dpad[j], data[j]);
+        }
+    }
+
 	if (pad->type == MK_ARCADE_MCP23017) {	// check if MCP23017 and extend with 4.
 		for (j = 4; j < (mk_max_mcp_arcade_buttons); j++) {
 			input_report_key(dev, mk_arcade_gpio_btn[j - 4], data[j]);
@@ -470,6 +493,12 @@ static int __init mk_setup_pad(struct mk *mk, int idx, int pad_type_arg) {
 		for (i = 0; i < mk_max_mcp_arcade_buttons; i++)
 			__set_bit(mk_arcade_gpio_btn[i], input_dev->keybit);
 	}
+
+    if (joystick_mode == MK_DIGITAL) {
+        for (i = 0; i < 4; i++) {
+            __set_bit(mk_arcade_gpio_btn_dpad[i], input_dev->keybit);
+        }
+    }
 
     mk->pad_count[pad_type]++;
 
